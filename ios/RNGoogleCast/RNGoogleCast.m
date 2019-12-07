@@ -13,6 +13,7 @@
   bool playbackEnded;
   NSUInteger currentItemID;
   NSTimer *progressTimer;
+  bool styleChangeRequest;
 }
 
 @synthesize bridge = _bridge;
@@ -188,6 +189,7 @@ RCT_EXPORT_METHOD(castMedia: (NSDictionary *)params
   NSString *posterUrl = [RCTConvert NSString:params[@"posterUrl"]];
   NSString *contentType = [RCTConvert NSString:params[@"contentType"]];
   NSDictionary *customData = [RCTConvert NSDictionary:params[@"customData"]];
+  NSArray *mediaTracks = [RCTConvert NSArray:params[@"mediaTracks"]];
   double streamDuration = [RCTConvert double:params[@"streamDuration"]];
   double playPosition = [RCTConvert double:params[@"playPosition"]];
 
@@ -220,15 +222,39 @@ RCT_EXPORT_METHOD(castMedia: (NSDictionary *)params
                                  width:480
                                 height:720]];
   }
-  GCKMediaInformation *mediaInfo =
+    
+  GCKMediaTextTrackStyle *textTrackStyle = [GCKMediaTextTrackStyle createDefault];
+  [textTrackStyle setForegroundColor:[[GCKColor alloc] initWithCSSString:@"#FFEB3B"]];
+  [textTrackStyle setFontFamily:@"serif"];
+  styleChangeRequest = [castSession.remoteMediaClient setTextTrackStyle:textTrackStyle];
+    
+  NSMutableArray *tracks = [[NSMutableArray alloc] init];
+  for(id track in mediaTracks) {
+      
+      NSNumber* ID = [track valueForKey:@"id"];
+      int trackId = [ID intValue];
+        
+      GCKMediaTrack *lang =
+      [[GCKMediaTrack alloc] initWithIdentifier:trackId
+                                contentIdentifier:track[@"uri"]
+                                contentType:track[@"type"]
+                                type:GCKMediaTrackTypeText
+                                textSubtype:GCKMediaTextTrackSubtypeCaptions
+                                name:track[@"title"]
+                                languageCode:track[@"language"]
+                                customData:nil];
+      [tracks addObject:lang];
+   }
+    
+   GCKMediaInformation *mediaInfo =
       [[GCKMediaInformation alloc] initWithContentID:mediaUrl
-                                          streamType:GCKMediaStreamTypeBuffered
-                                         contentType:contentType
-                                            metadata:metadata
-                                      streamDuration:streamDuration
-                                         mediaTracks:nil
-                                      textTrackStyle:nil
-                                          customData:customData];
+                                  streamType:GCKMediaStreamTypeBuffered
+                                  contentType:contentType
+                                  metadata:metadata
+                                  streamDuration:streamDuration
+                                  mediaTracks:tracks
+                                  textTrackStyle:nil
+                                  customData:customData];
   // Cast the video.
   if (castSession) {
     [castSession.remoteMediaClient loadMedia:mediaInfo
@@ -239,6 +265,15 @@ RCT_EXPORT_METHOD(castMedia: (NSDictionary *)params
     NSError *error = [NSError errorWithDomain:NSCocoaErrorDomain code:GCKErrorCodeNoMediaSession userInfo:nil];
     reject(@"no_session", @"No castSession!", error);
   }
+}
+
+#pragma mark - GCKRequestDelegate
+
+- (void)requestDidComplete:(GCKRequest *)request {
+    if (request == styleChangeRequest) {
+        NSLog(@"Style update completed.");
+        styleChangeRequest = nil;
+    }
 }
 
 RCT_EXPORT_METHOD(play) {
